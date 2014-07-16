@@ -1,0 +1,8 @@
+
+Radius: 0.26
+WheelRadius: 0.08
+NodeLeftWheel: '1'
+NodeRightWheel: '0'
+TICKNUM: 500000
+Port: "/dev/ttyUSB0"
+BaudRate: 9600

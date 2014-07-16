@@ -1,0 +1,10 @@
+<launch>  
+
+	<group ns="">
+	<param name="tf_prefix" value="" />
+  <node name="TobotDriver" pkg="tobotdrivers" type="TobotNode">
+    <rosparam file="$(find tobotdrivers)/config/robot.yaml" command="load" />
+  </node>
+  <group/>
+  
+</launch>

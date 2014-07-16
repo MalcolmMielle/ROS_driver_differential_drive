@@ -1,0 +1,175 @@
+/*
+//First edition by old000: C.H.Hung , NTU,EE97,master student
+//Second edition Modified by kenji : Y.C.Lin , NTU,EE97,master student in 2010.04
+//Third edition Modified by W.L.Hsu ,NTU,EE98,PhD student
+*/
+#ifndef YO_ROBOT_HPP  
+#define YO_ROBOT_HPP
+
+#include <math.h>
+//#include "process.h"
+#include "SerialPortControl_stream.hpp"
+#include "nav_msgs/Odometry.h"
+#include "Quaternion.hpp"
+
+#define PI               3.1415926
+
+#define MOTOR_PORT1               8
+
+#define MOTOR_BAUDRATE      9600
+#define PULSE_RATIO         135168  // 2048*66 pulses for 1 circle
+#define MAXIMUM_SPEED        10000  // RPM
+#define MOTION_SPEED          6000  // RPM
+#define MOTION_ACCELERATION    1000  // circle/s^2 (changed for little motor)
+#define MOTION_DECELERATION    1000  // circle/s^2 (changed for little motor)
+
+class Robot{
+
+	protected : 
+	SerialPortControl _motorControl1;
+	double _speed; //Speed selon x du robot in m.s
+	double _angularSpeed; //angular speed in rad.s
+	
+	//Robot carachetristique
+	double _radius;
+	double _wheelRadius;
+	
+	//Odometry stuff
+	nav_msgs::Odometry _odomRead; //Odometry of the robot
+	bool _verbose;
+	
+	ros::NodeHandle _pnode;
+
+	public:
+	
+	Robot(ros::NodeHandle ao_nh) : _motorControl1(7500, ao_nh), _speed(0), _angularSpeed(0),_radius(1), _verbose(false), _pnode(ao_nh){
+		_pnode.param<double>("WheelRadius", _wheelRadius, 0.08);
+		_pnode.param<double>("WRadius", _radius, 0.26);
+	};
+	
+	Robot(ros::NodeHandle ao_nh, double r, double wr) : _motorControl1(7500, ao_nh), _speed(0), _angularSpeed(0), _radius(r), _wheelRadius(wr), _verbose(false), _pnode(ao_nh){
+		//_pnode.param<double>("WheelRadius", _wheelRadius, 0.08);
+		//_pnode.param<double>("WRadius", _radius, 0.26);
+	};
+	
+	/*********************************
+	Accesseurs
+	*********************************/
+	double getSpeed(){return _speed;}
+	double getAngularSpeed(){return _angularSpeed;}
+	double getRadius(){return _radius;}
+	double getWheelRadius(){return _wheelRadius;}
+	SerialPortControl& getControl(){return _motorControl1;}
+	nav_msgs::Odometry& getOdom(){return _odomRead;}
+	
+	void setRadius(double d){_radius=d;}
+	void setWheelRadius(double wd){_wheelRadius=wd;}
+	
+	/************Set the speed of the two wheel left and right
+	Depending on the speed X and the angular speed asked*****/
+	
+	void setSpeed(double s){_speed=s;}
+	void setAngularSpeed(double as){_angularSpeed=as;};
+	void setVerbose(){_verbose=true;_motorControl1.setVerbose();}	
+	/*********************************************************
+	Function conversion for the serial communication.
+	We calculate the speed and change the speed to RPM.
+	*********************************************************/
+	
+	int ms2rpm(double speed){
+		return speed*60/(3.1415*_wheelRadius);
+	}
+	double rpm2ms(double rpm){
+		return rpm*(3.1415*_wheelRadius)/60;
+	}
+	void robot2wheels(geometry_msgs::Twist& _twistDemand);
+	void robot2wheels();	
+	void odometry();
+
+	
+	void affiche(){std::cout<<"I'm the Robot of size "<<_radius<<" and wheels "<<_wheelRadius<<" my speed is "<< _speed<< " and angular speed "<<_angularSpeed<<std::endl;}
+
+};
+
+
+/*********************************************************************************************************
+FONCTIONS
+*********************************************************************************************************/
+
+
+inline void Robot::odometry(){
+	//init of all the measured values
+	if(_verbose==true){
+		std::cout<< "Searching for odometry..."<<std::endl;
+	}
+	//Prepare de reading by stating that we are in a correct reading mode. if the reading fail for X reason then the state willl be false afterward.
+	_motorControl1.setReadState();
+	//_motorControl1.updateMeasurement();
+	double SLW=_motorControl1.readRealSLW();
+	double posLW=_motorControl1.readLencoder();
+	
+	double TICKNUM=_motorControl1.getTickNumber();
+	
+	double SRW=_motorControl1.readRealSRW();
+	double posRW=_motorControl1.readRencoder();
+
+//	double SRW=SLW; //TESTING!!
+//	double posRW=posLW;
+	//Need to convert from RPM to m.s
+	SRW=rpm2ms(SRW);
+	SLW=rpm2ms(SLW);
+	ROS_INFO("the speed is");
+	std::cout << SRW <<" "<< SLW<<std::endl;
+	
+	if(_verbose==true){
+		std::cout<< "We measured everything and so posx"<<posRW<< " speedl "<<SLW<<std::endl;
+	}
+	
+	_odomRead.twist.twist.linear.x = _odomRead.twist.twist.linear.y = _odomRead.twist.twist.linear.z = _odomRead.twist.twist.angular.x = _odomRead.twist.twist.angular.y = _odomRead.twist.twist.angular.z=0;
+	//calcul of speed
+	double Speed_x=_wheelRadius*( (SRW + SLW)/2);
+	double Angle=(_wheelRadius/_radius)*(SRW-SLW );
+	if(Speed_x>0.001 || Speed_x<-0.001){
+		_odomRead.twist.twist.linear.x=Speed_x;
+	}
+	if(Angle>0.001 || Angle<-0.001){
+		_odomRead.twist.twist.angular.z=Angle;
+	}
+	
+	//Calcul of position
+	double angle=2*PI*(_wheelRadius/_radius)*( (posLW-posRW)/TICKNUM);
+	_odomRead.pose.pose.position.x=_wheelRadius*cos(angle)*(posLW+posRW)*(PI/(TICKNUM));
+	_odomRead.pose.pose.position.y=_wheelRadius*sin(angle)*(posLW+posRW)*(PI/(TICKNUM));
+	
+	Quaternion quat=Quaternion(0,0,angle);
+	_odomRead.pose.pose.orientation.x=quat.getX();
+	_odomRead.pose.pose.orientation.y=quat.getY();
+	_odomRead.pose.pose.orientation.z=quat.getZ();
+	_odomRead.pose.pose.orientation.w=quat.getW();
+	
+	_odomRead.header.stamp=ros::Time::now();
+	_odomRead.header.frame_id="odom"; //Frame of the pose
+	_odomRead.child_frame_id="odom"; //Frame of the twist
+}
+
+
+inline void Robot::robot2wheels(geometry_msgs::Twist& _twistDemand){
+	_speed=_twistDemand.linear.x;
+	_angularSpeed=_twistDemand.angular.z;	
+	robot2wheels();
+}
+
+inline void Robot::robot2wheels(){	
+	double rwheel =  (((2 * _speed)/_wheelRadius) + ((_angularSpeed * _radius)/ _wheelRadius))/2 ;
+	double lwheel =  (((2 * _speed)/_wheelRadius) - ((_angularSpeed * _radius)/ _wheelRadius))/2 ;
+	if (_verbose==true){
+		std::cout<<"Command envoyée au controlleur mon capitaine. On a "<<_speed<< " "<<_angularSpeed<< " donc Roue droite "<<rpm2ms(rwheel)<<" roue gauche "<<rpm2ms(lwheel)<<std::endl;
+		std::cout << "les deux vitesses sont "<< rpm2ms(rwheel)<<" " <<rpm2ms(lwheel) << " pour "<< rwheel <<" "<<lwheel<< std::endl;
+	}	
+	//Sending the new command as rpm
+	_motorControl1.update(ms2rpm(rwheel), ms2rpm(lwheel));
+}
+
+
+
+#endif
