@@ -24,3 +24,5 @@ To launch : roslaunch tobotdrivers TobotDriver.launch
 
 I put exception in case a base lexical boost thing happen. It happen before with the roslaunch. Never with the rosrun version...
 You have to use roslaunch at least one so that the parameters are loaded.
+
+Need libserial :  https://github.com/MalcolmMielle/libserial
